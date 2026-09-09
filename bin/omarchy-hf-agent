@@ -40,7 +40,8 @@ case $cmd in
   snapshot) snapshot_write; cat "$SNAPSHOT" ;;
   token) case ${1:-} in
            --clear) token_clear; snapshot_write "" ;;
-           "") fail "token <value>|--clear"; exit 1 ;;
+           --stdin) IFS= read -r v; [[ -n $v ]] || { fail "token --stdin: nothing on stdin"; exit 1; }; try token_set "$v" ;;   # keeps the token out of argv and shell history
+           "") fail "token <value>|--stdin|--clear"; exit 1 ;;
            *) try token_set "$1" ;;
          esac ;;
   models) try models_fetch; jq -c '.models' "$SNAPSHOT" ;;

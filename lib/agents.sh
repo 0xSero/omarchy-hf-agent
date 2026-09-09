@@ -3,10 +3,11 @@
 #
 # The router reaches an agent only when the agent is launched from the panel: the endpoint, token,
 # and model travel in the launch command's environment and flags. Nothing on disk that the user
-# owns is edited. The router speaks OpenAI chat completions only, so claude (Anthropic Messages)
-# is not offered; the rest are the agents Omarchy itself knows how to launch.
+# owns is edited. The router speaks OpenAI chat completions, Anthropic Messages (/v1/messages), and
+# OpenAI Responses (/v1/responses), checked live on 2026-09-09, so claude and codex get their own
+# dialects; the rest are the agents Omarchy itself knows how to launch.
 
-HARNESSES=(pi omp opencode ori codex grok agy hermes copilot crush)
+HARNESSES=(pi omp opencode ori claude codex grok agy hermes copilot crush)
 ENDPOINT="$ROUTER/v1"
 
 harnesses_json() { # -> {"installed":["pi",...],"default":"pi"}; the default is Omarchy's, when it is one of ours
@@ -32,12 +33,19 @@ agent_command() {
   local name=$1 model=$2 bin cfg
   bin=$(bin_of "$name") || { fail "$name is not installed"; return; }
   case $name in
+    claude)
+      # a bearer token, the form Claude Code uses as-is for gateways (ANTHROPIC_API_KEY would prompt
+      # "use this API key?" for every new value); the router serves /v1/messages under the base URL
+      with_key ANTHROPIC_AUTH_TOKEN
+      printf '%s\0' env "ANTHROPIC_BASE_URL=$ROUTER" "ANTHROPIC_MODEL=$model" \
+        "ANTHROPIC_DEFAULT_SONNET_MODEL=$model" "ANTHROPIC_DEFAULT_OPUS_MODEL=$model" "ANTHROPIC_DEFAULT_HAIKU_MODEL=$model" \
+        "$bin" --model "$model" ;;
     codex)
-      # codex talks to a custom provider over chat completions when told wire_api=chat
+      # codex talks to a custom provider over the Responses API, which the router serves
       with_key HF_TOKEN
       printf '%s\0' "$bin" \
         -c "model_providers.hf.name=Hugging Face" -c "model_providers.hf.base_url=$ENDPOINT" \
-        -c "model_providers.hf.wire_api=chat" -c "model_providers.hf.env_key=HF_TOKEN" \
+        -c "model_providers.hf.wire_api=responses" -c "model_providers.hf.env_key=HF_TOKEN" \
         -c "model_provider=hf" -c "model=$model" ;;
     opencode)
       # opencode resolves {env:NAME} inside its config, so the token stays out of the config text too

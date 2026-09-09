@@ -73,13 +73,14 @@ rm -rf ~/.local/state/omarchy/hf-agent
 
 ## How it works
 
-**The router.** Everything goes to `https://router.huggingface.co/v1`, the
-OpenAI-compatible front of Hugging Face Inference Providers. The plugin
-assumes exactly two endpoints: `GET /v1/models` to list and to prove the
-token, and `POST /v1/chat/completions`, which the agents call. It does not
-assume an Anthropic Messages endpoint, so **claude is not offered**; codex
-is launched with `wire_api=chat`, since Responses is not assumed either.
-Every other agent Omarchy knows speaks chat completions.
+**The router.** Everything goes to `https://router.huggingface.co`, the
+front of Hugging Face Inference Providers. The plugin uses `GET /v1/models`
+to list models and to prove the token, and the agents use the dialect they
+speak: OpenAI chat completions (pi, omp, opencode, ori, grok, agy, hermes,
+copilot, crush), Anthropic Messages at `/v1/messages` (claude), and OpenAI
+Responses at `/v1/responses` (codex). All three were checked against the
+router with a real token when this was written; if a model on the router
+lacks one of them, that agent's first request says so.
 
 **The token** lives in one file, `~/.local/state/omarchy/hf-agent/token`
 (0600), and nowhere else: not in the snapshot the card reads (it carries
