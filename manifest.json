@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "sero.hf-agent",
+  "name": "HF Agent",
+  "version": "1.0.0",
+  "author": "0xSero",
+  "license": "MIT",
+  "description": "Open any installed coding agent on a model served by Hugging Face Inference Providers, from one button on the bar. Give it your Hugging Face token once, pick a model from the router's list, pick a harness, Launch. No containers, no local weights, no GPU, no config file of yours touched; the token lives in one 0600 file and never enters a process argument.",
+  "kinds": [
+    "bar-widget"
+  ],
+  "activation": "on-demand",
+  "entryPoints": {
+    "barWidget": "Panel.qml"
+  },
+  "barWidget": {
+    "displayName": "HF Agent",
+    "description": "Pick a Hugging Face Inference Providers model and a coding agent; Launch opens the agent on it.",
+    "category": "AI",
+    "aliases": [
+      "hf-agent",
+      "huggingface"
+    ],
+    "defaultSection": "right",
+    "allowMultiple": false
+  }
+}

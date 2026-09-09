@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# omarchy:summary=Open a coding agent on a Hugging Face Inference Providers model
+# omarchy:args=<snapshot|token <value>|--clear|models|model <id>|--clear|harness <name>|--clear|launch [name]|agent-dir <path>>
+#
+# Every verb finishes before it returns; there is no worker and no lock. `snapshot` is a pure read
+# that rewrites the state file the panel watches. `token` proves a token against the router before
+# keeping it. `models` refreshes the cached list. `model` and `harness` record a pick. `launch`
+# opens the harness with the router in its environment. A refusal lands in the snapshot's error,
+# because the panel never sees stderr.
+set -euo pipefail
+HERE=$(cd -- "$(dirname -- "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || printf '%s' "${BASH_SOURCE[0]}")")" && pwd)
+# shellcheck source=../lib/common.sh
+source "$HERE/../lib/common.sh"
+# shellcheck source=../lib/router.sh
+source "$HERE/../lib/router.sh"
+# shellcheck source=../lib/agents.sh
+source "$HERE/../lib/agents.sh"
+# shellcheck source=../lib/snapshot.sh
+source "$HERE/../lib/snapshot.sh"
+
+command -v jq >/dev/null 2>&1 || { fail "jq is required"; exit 1; }
+
+# try <fn> [args]: run a verb; its last stderr line becomes the card's error, and success retires an old one
+try() { if "$@" 2>"$STATE/verb.err"; then snapshot_write ""; else local m; m=$(sed -n '$s/^hf-agent: //p' "$STATE/verb.err"); refuse "${m:-$1 failed (see $LOGFILE)}"; return 1; fi; }
+
+usage() {
+  echo 'Usage: omarchy-hf-agent <command>
+  snapshot                 refresh and print the state the panel renders
+  token <value>|--clear    store your Hugging Face token (checked against the router), or forget it
+  models                   refresh the list of models the router serves
+  model <id>|--clear       pick a model by id (any id the router accepts, listed or not)
+  harness <name>|--clear   pick the coding agent to launch
+  launch [name]            open the picked harness (or <name>) on the picked model
+  agent-dir <path>         directory agents open in (default: where the shell started)'
+}
+
+cmd=${1:-help}; shift || true
+state_dir
+case $cmd in
+  snapshot) snapshot_write; cat "$SNAPSHOT" ;;
+  token) case ${1:-} in
+           --clear) token_clear; snapshot_write "" ;;
+           "") fail "token <value>|--clear"; exit 1 ;;
+           *) try token_set "$1" ;;
+         esac ;;
+  models) try models_fetch; jq -c '.models' "$SNAPSHOT" ;;
+  model) case ${1:-} in
+           --clear) pick_write model ""; log "model cleared"; snapshot_write "" ;;
+           "") fail "model <id>|--clear"; exit 1 ;;
+           *) [[ $1 =~ ^[A-Za-z0-9._:/-]+$ ]] || { refuse "model ids are letters, digits, and ._:/- only"; exit 1; }
+              pick_write model "$1"; log "model $1"; snapshot_write "" ;;
+         esac ;;
+  harness) case ${1:-} in
+             --clear) pick_write harness ""; log "harness cleared"; snapshot_write "" ;;
+             "") fail "harness <name>|--clear"; exit 1 ;;
+             *) harnesses_json | jq -e --arg a "$1" '.installed|index($a)!=null' >/dev/null || { refuse "$1 is not an installed harness this plugin can launch"; exit 1; }
+                pick_write harness "$1"; log "harness $1"; snapshot_write "" ;;
+           esac ;;
+  launch) try launch "${1:-}" ;;
+  agent-dir) [[ -d ${1:-} ]] && { pick_write agent-dir "$(cd "$1" && pwd)"; log "agent-dir $1"; } || { fail "agent-dir: not a directory: ${1:-}"; exit 1; } ;;
+  help|-h|--help) usage ;;
+  *) usage >&2; exit 2 ;;
+esac
