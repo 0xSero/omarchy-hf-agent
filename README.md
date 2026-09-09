@@ -28,7 +28,8 @@ the icon launches without opening the card.
 - A Hugging Face token with the *inference* permission
   (<https://huggingface.co/settings/tokens>)
 - At least one coding agent Omarchy can launch: pi, omp, opencode, ori,
-  codex, grok, agy, hermes, copilot, or crush
+  codex, grok, agy, hermes, copilot, or crush (claude needs a Messages
+  endpoint the router does not yet serve for it)
 - `jq`, `curl`
 
 No Docker, no GPU, no model on disk, nothing to configure.
@@ -73,14 +74,13 @@ rm -rf ~/.local/state/omarchy/hf-agent
 
 ## How it works
 
-**The router.** Everything goes to `https://router.huggingface.co`, the
-front of Hugging Face Inference Providers. The plugin uses `GET /v1/models`
-to list models and to prove the token, and the agents use the dialect they
-speak: OpenAI chat completions (pi, omp, opencode, ori, grok, agy, hermes,
-copilot, crush), Anthropic Messages at `/v1/messages` (claude), and OpenAI
-Responses at `/v1/responses` (codex). All three were checked against the
-router with a real token when this was written; if a model on the router
-lacks one of them, that agent's first request says so.
+**The router.** Everything goes to `https://router.huggingface.co/v1`, the
+OpenAI-compatible front of Hugging Face Inference Providers: `GET /v1/models`
+to list models and to prove the token, and `POST /v1/chat/completions` for
+the agents. The router also has `/v1/messages` and `/v1/responses`, but as of
+2026-09-09 they answer simple requests only, not what Claude Code and Codex
+actually send, so **claude is not offered** and codex runs over chat
+completions. When that changes, they are one line each in `lib/agents.sh`.
 
 **The token** lives in one file, `~/.local/state/omarchy/hf-agent/token`
 (0600), and nowhere else: not in the snapshot the card reads (it carries

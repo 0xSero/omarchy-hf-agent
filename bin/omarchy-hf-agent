@@ -40,22 +40,22 @@ case $cmd in
   snapshot) snapshot_write; cat "$SNAPSHOT" ;;
   token) case ${1:-} in
            --clear) token_clear; snapshot_write "" ;;
-           --stdin) IFS= read -r v; [[ -n $v ]] || { fail "token --stdin: nothing on stdin"; exit 1; }; try token_set "$v" ;;   # keeps the token out of argv and shell history
+           --stdin) IFS= read -r v; [[ -n $v ]] || { fail "token --stdin: nothing on stdin"; exit 1; }; try token_set "$v"; jq -c '{token:.token.set, models:(.models|length)}' "$SNAPSHOT" ;;   # keeps the token out of argv and shell history
            "") fail "token <value>|--stdin|--clear"; exit 1 ;;
-           *) try token_set "$1" ;;
+           *) try token_set "$1"; jq -c '{token:.token.set, models:(.models|length)}' "$SNAPSHOT" ;;
          esac ;;
   models) try models_fetch; jq -c '.models' "$SNAPSHOT" ;;
   model) case ${1:-} in
            --clear) pick_write model ""; log "model cleared"; snapshot_write "" ;;
            "") fail "model <id>|--clear"; exit 1 ;;
            *) [[ $1 =~ ^[A-Za-z0-9._:/-]+$ ]] || { refuse "model ids are letters, digits, and ._:/- only"; exit 1; }
-              pick_write model "$1"; log "model $1"; snapshot_write "" ;;
+              pick_write model "$1"; log "model $1"; snapshot_write ""; jq -c '{model, harness}' "$SNAPSHOT" ;;
          esac ;;
   harness) case ${1:-} in
              --clear) pick_write harness ""; log "harness cleared"; snapshot_write "" ;;
              "") fail "harness <name>|--clear"; exit 1 ;;
              *) harnesses_json | jq -e --arg a "$1" '.installed|index($a)!=null' >/dev/null || { refuse "$1 is not an installed harness this plugin can launch"; exit 1; }
-                pick_write harness "$1"; log "harness $1"; snapshot_write "" ;;
+                pick_write harness "$1"; log "harness $1"; snapshot_write ""; jq -c '{model, harness}' "$SNAPSHOT" ;;
            esac ;;
   launch) try launch "${1:-}" ;;
   agent-dir) [[ -d ${1:-} ]] && { pick_write agent-dir "$(cd "$1" && pwd)"; log "agent-dir $1"; } || { fail "agent-dir: not a directory: ${1:-}"; exit 1; } ;;

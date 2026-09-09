@@ -48,8 +48,8 @@ find "$TMP/bin" -type f -exec chmod +x {} +   # not the jq symlink: its target i
 # ---------------------------------------------------------------- fresh state
 "$CLI" snapshot >/dev/null
 [[ $(snap .token.set) == false && $(snap .model) == "" && $(snap .harness) == "" && $(snap .error) == "" ]] || fail "fresh snapshot" "$(cat "$S/snapshot.json")"; pass "fresh snapshot: no token, no model, no harness, no error"
-[[ $(snap '.harnesses.installed|join(",")') == "pi,opencode,claude,codex,hermes,crush" && $(snap .harnesses.default) == pi ]] || fail "harnesses" "$(snap .harnesses)"; pass "installed harnesses are listed in the plugin's order; Omarchy's default is named"
-[[ $(snap '.harnesses.installed|index("claude")') != null ]] || fail "claude offered"; pass "claude is offered: the router serves Anthropic Messages"
+[[ $(snap '.harnesses.installed|join(",")') == "pi,opencode,hermes,crush" && $(snap .harnesses.default) == pi ]] || fail "harnesses" "$(snap .harnesses)"; pass "installed harnesses are listed in the plugin's order; Omarchy's default is named"
+[[ $(snap '.harnesses.installed|index("claude")') == null ]] || fail "claude offered"; pass "claude is not offered: the router does not serve Claude Code's Messages requests"
 [[ $(mode "$S") == 700 ]] || fail "state dir mode" "$(ls -ld "$S")"; pass "the state directory is 0700"
 
 # ---------------------------------------------------------------- token
@@ -90,26 +90,24 @@ SHIM_CODE=500 "$CLI" models >/dev/null 2>&1 && fail "500 accepted"; [[ $(snap .e
 "$CLI" launch >/dev/null 2>&1 && fail "launch without model"; [[ $(snap .error) == *"no model"* ]] || fail "no model refusal"; pass "launch without a model is refused out loud"
 "$CLI" model "Qwen/Qwen3-Coder" >/dev/null
 "$CLI" harness nope >/dev/null 2>&1 && fail "unknown harness"; [[ $(snap .error) == *"not an installed harness"* ]] || fail "harness refusal"; pass "harness refuses a name that is not installed"
-"$CLI" harness codex >/dev/null; [[ $(snap .harness) == codex && $(snap .error) == "" ]] || fail "harness pick"; pass "harness <name> records the pick"
+"$CLI" harness hermes >/dev/null; [[ $(snap .harness) == hermes && $(snap .error) == "" ]] || fail "harness pick"; pass "harness <name> records the pick"
 "$CLI" harness --clear >/dev/null; [[ $(snap .harness) == "" ]] || fail "harness clear"; pass "harness --clear falls back to the default"
 
 # ---------------------------------------------------------------- launch
 argv=$("$CLI" launch); [[ $argv == *omarchy-hf-agent-launch* && $argv != *"$GOOD"* ]] || fail "default launch argv" "$argv"; pass "launch with no harness picked uses Omarchy's default; the token is not in argv"
 out=$(eval "$argv"); [[ $out == *"/pi --provider hf --model Qwen/Qwen3-Coder"* && $out == *"HF_TOKEN=$GOOD"* && $out == *"PI_CODING_AGENT_DIR=$S/agents/pi"* ]] || fail "pi launch" "$out"; pass "launch pi: provider flags by argv, token by environment, plugin-owned agent dir"
-grep -q -- "$GOOD" "$S/agents/pi/models.json" && fail "token in pi models.json"; [[ $(jq -r '.providers.hf.apiKey' "$S/agents/pi/models.json") == HF_TOKEN && $(jq -r '.providers.hf.baseUrl' "$S/agents/pi/models.json") == "https://router.test/v1" ]] || fail "pi models.json"; pass "pi's models.json names the variable and the router, not the token"
-argv=$("$CLI" launch codex); out=$(eval "$argv")
-[[ $out == *"wire_api=responses"* && $out == *"base_url=https://router.test/v1"* && $out == *"model=Qwen/Qwen3-Coder"* && $out == *"HF_TOKEN=$GOOD"* && $argv != *"$GOOD"* ]] || fail "codex launch" "$out"; pass "launch codex: chat-completions provider by flags, token by environment only"
+[[ $(jq -r '.providers.hf.apiKey' "$S/agents/pi/models.json") == "$GOOD" && $(jq -r '.providers.hf.baseUrl' "$S/agents/pi/models.json") == https://router.test/v1 && $(mode "$S/agents/pi/models.json") == 600 && $argv != *"$GOOD"* ]] || fail "pi models.json" "$(cat "$S/agents/pi/models.json")"; pass "pi's plugin-owned models.json carries the token (pi takes the value, not a name), 0600, and argv does not"
+"$CLI" launch codex >/dev/null 2>&1 && fail "codex launched"; [[ $(snap .error) == *"not an installed harness"* ]] || fail "codex refusal"; pass "launch codex is refused: the router does not serve Codex's Responses requests"
 argv=$("$CLI" launch opencode); out=$(eval "$argv")
 [[ $out == *"--model hf/Qwen/Qwen3-Coder"* && $out == *'"apiKey":"{env:HF_TOKEN}"'* && $out == *"HF_TOKEN=$GOOD"* && $argv != *"$GOOD"* ]] || fail "opencode launch" "$out"; pass "launch opencode: config by environment with an {env:} key, token by environment only"
 argv=$("$CLI" launch crush); out=$(eval "$argv")
 [[ $out == *"XDG_CONFIG_HOME=$S/agents/crush"* && $out == *"HF_TOKEN=$GOOD"* && $argv != *"$GOOD"* ]] || fail "crush launch" "$out"
-grep -q -- "$GOOD" "$S/agents/crush/crush/crush.json" && fail "token in crush.json"; [[ $(jq -r '.providers.hf.api_key' "$S/agents/crush/crush/crush.json") == '$HF_TOKEN' ]] || fail "crush api_key"; pass "launch crush: plugin-owned XDG homes, config names \$HF_TOKEN, token by environment only"
+[[ $(jq -r '.providers.hf.api_key' "$S/agents/crush/crush/crush.json") == "$GOOD" && $(mode "$S/agents/crush/crush/crush.json") == 600 && $argv != *"$GOOD"* ]] || fail "crush.json" "$(cat "$S/agents/crush/crush/crush.json")"; pass "crush's plugin-owned crush.json carries the token, 0600, and argv does not"
 argv=$("$CLI" launch hermes); out=$(eval "$argv")
 [[ $out == *"OPENAI_BASE_URL=https://router.test/v1"* && $out == *"OPENAI_API_KEY=$GOOD"* && $argv != *"$GOOD"* ]] || fail "hermes launch" "$out"; pass "launch hermes: OPENAI_BASE_URL and OPENAI_API_KEY by convention"
-grep -rq -- "$GOOD" "$S/log" "$S/snapshot.json" "$S/agents" && fail "token leaked by a launch"; pass "after five launches the token is still in the token file only"
+grep -rq -- "$GOOD" "$S/log" "$S/snapshot.json" && fail "token leaked by a launch"; find "$S/agents" -type f ! -perm 600 | grep -q . && fail "agent config not 0600"; pass "after five launches the token is only in the token file and the agents' own 0600 configs, never the log or snapshot"
 [[ ! -e $OMARCHY_HF_USER_HOME/.codex && ! -e $OMARCHY_HF_USER_HOME/.config && ! -e $OMARCHY_HF_USER_HOME/.pi ]] || fail "user files touched"; pass "no user config files were created or edited"
-argv=$("$CLI" launch claude); out=$(eval "$argv")
-[[ $out == *"ANTHROPIC_BASE_URL=https://router.test"* && $out == *"ANTHROPIC_AUTH_TOKEN=$GOOD"* && $out == *"--model Qwen/Qwen3-Coder"* && $argv != *"$GOOD"* ]] || fail "claude launch" "$out"; pass "launch claude: Messages at the router root, the token as a bearer in the environment only"
+"$CLI" launch claude >/dev/null 2>&1 && fail "claude launched"; [[ $(snap .error) == *"not an installed harness"* ]] || fail "claude refusal"; pass "launch claude is refused with a sentence"
 printf '%s\n' "$GOOD" | "$CLI" token --stdin >/dev/null; [[ $(cat "$OMARCHY_HF_STATE/token") == "$GOOD" ]] || fail "token --stdin"; pass "token --stdin stores the token without it ever being an argument"
 "$CLI" launch pi >/dev/null; [[ $(snap .error) == "" ]] || fail "launch clears refusal"; pass "a launch that works retires the earlier refusal"
 OMARCHY_HF_FOREGROUND=0 "$CLI" launch pi >/dev/null; sleep 0.3; grep -q "launch pi on Qwen/Qwen3-Coder" "$S/log" || fail "launch logged"; pass "a detached launch goes through omarchy-launch-tui and is logged by name, not by token"

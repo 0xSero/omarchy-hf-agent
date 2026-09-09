@@ -3,11 +3,13 @@
 #
 # The router reaches an agent only when the agent is launched from the panel: the endpoint, token,
 # and model travel in the launch command's environment and flags. Nothing on disk that the user
-# owns is edited. The router speaks OpenAI chat completions, Anthropic Messages (/v1/messages), and
-# OpenAI Responses (/v1/responses), checked live on 2026-09-09, so claude and codex get their own
-# dialects; the rest are the agents Omarchy itself knows how to launch.
+# owns is edited. The router serves OpenAI chat completions in full. Its /v1/messages and
+# /v1/responses answer simple requests but not what the agents actually send (checked live on
+# 2026-09-09: Claude Code's Messages request comes back as a short non-Message body, and the
+# Responses schema rejects Codex's tool definitions; Codex 0.147 dropped wire_api=chat, so it has
+# no path left), so claude and codex are not offered. Re-check both when the router changes.
 
-HARNESSES=(pi omp opencode ori claude codex grok agy hermes copilot crush)
+HARNESSES=(pi omp opencode ori grok agy hermes copilot crush)
 ENDPOINT="$ROUTER/v1"
 
 harnesses_json() { # -> {"installed":["pi",...],"default":"pi"}; the default is Omarchy's, when it is one of ours
@@ -33,20 +35,6 @@ agent_command() {
   local name=$1 model=$2 bin cfg
   bin=$(bin_of "$name") || { fail "$name is not installed"; return; }
   case $name in
-    claude)
-      # a bearer token, the form Claude Code uses as-is for gateways (ANTHROPIC_API_KEY would prompt
-      # "use this API key?" for every new value); the router serves /v1/messages under the base URL
-      with_key ANTHROPIC_AUTH_TOKEN
-      printf '%s\0' env "ANTHROPIC_BASE_URL=$ROUTER" "ANTHROPIC_MODEL=$model" \
-        "ANTHROPIC_DEFAULT_SONNET_MODEL=$model" "ANTHROPIC_DEFAULT_OPUS_MODEL=$model" "ANTHROPIC_DEFAULT_HAIKU_MODEL=$model" \
-        "$bin" --model "$model" ;;
-    codex)
-      # codex talks to a custom provider over the Responses API, which the router serves
-      with_key HF_TOKEN
-      printf '%s\0' "$bin" \
-        -c "model_providers.hf.name=Hugging Face" -c "model_providers.hf.base_url=$ENDPOINT" \
-        -c "model_providers.hf.wire_api=responses" -c "model_providers.hf.env_key=HF_TOKEN" \
-        -c "model_provider=hf" -c "model=$model" ;;
     opencode)
       # opencode resolves {env:NAME} inside its config, so the token stays out of the config text too
       cfg=$(jq -nc --arg u "$ENDPOINT" --arg m "$model" \
@@ -54,24 +42,24 @@ agent_command() {
       with_key HF_TOKEN
       printf '%s\0' env "OPENCODE_CONFIG_CONTENT=$cfg" "$bin" --model "hf/$model" ;;
     pi|omp)
-      # pi reads providers from its agent dir; a plugin-owned dir keeps the user's own untouched, and
-      # apiKey names an environment variable, which pi reads at start. omp also wants a config.yml
-      # there, or it opens its first-run wizard.
+      # pi reads providers from its agent dir; a plugin-owned dir keeps the user's own untouched. pi
+      # takes apiKey as the value (a variable name is sent as-is: 401, checked live), so the token
+      # goes into that 0600 file. omp also wants a config.yml there, or it opens its first-run wizard.
       local dir="$STATE/agents/$name"; mkdir -p "$dir"
-      jq -nc --arg u "$ENDPOINT" --arg m "$model" \
-        '{providers:{"hf":{baseUrl:$u,apiKey:"HF_TOKEN",api:"openai-completions",models:[{id:$m,name:$m,input:["text"]}]}}}' \
+      jq -nc --arg u "$ENDPOINT" --arg m "$model" --arg k "$(cat "$TOKEN_FILE")" \
+        '{providers:{"hf":{baseUrl:$u,apiKey:$k,api:"openai-completions",models:[{id:$m,name:$m,input:["text"]}]}}}' \
         >"$dir/models.json"
       [[ $name == omp ]] && printf 'modelRoles:\n  default: hf/%s\nsetupVersion: 2\n' "$model" >"$dir/config.yml"
       with_key HF_TOKEN
       printf '%s\0' env "PI_CODING_AGENT_DIR=$dir" "OMP_CODING_AGENT_DIR=$dir" "$bin" --provider hf --model "$model" ;;
     crush)
-      # crush takes providers from XDG config only, expands $VAR in api_key, and its XDG data file
-      # pins the last chosen model over the config: give it a plugin-owned config and data home
+      # crush takes providers from XDG config only, and its XDG data file pins the last chosen model
+      # over the config: give it a plugin-owned config and data home; the token goes into that 0600 file
       local dir="$STATE/agents/crush/crush"; mkdir -p "$dir"
       # a mise shim would reinstall crush under the new data home: launch the real binary instead
       [[ $bin == */mise/shims/* ]] && command -v mise >/dev/null 2>&1 && bin=$(mise which crush 2>/dev/null || printf '%s' "$bin")
-      jq -nc --arg u "$ENDPOINT" --arg m "$model" \
-        '{providers:{"hf":{type:"openai",name:"Hugging Face",base_url:$u,api_key:"$HF_TOKEN",models:[{id:$m,name:$m,context_window:131072,default_max_tokens:8192}]}},models:{large:{provider:"hf",model:$m},small:{provider:"hf",model:$m}}}' \
+      jq -nc --arg u "$ENDPOINT" --arg m "$model" --arg k "$(cat "$TOKEN_FILE")" \
+        '{providers:{"hf":{type:"openai",name:"Hugging Face",base_url:$u,api_key:$k,models:[{id:$m,name:$m,context_window:131072,default_max_tokens:8192}]}},models:{large:{provider:"hf",model:$m},small:{provider:"hf",model:$m}}}' \
         >"$dir/crush.json"
       with_key HF_TOKEN
       printf '%s\0' env "XDG_CONFIG_HOME=$STATE/agents/crush" "XDG_DATA_HOME=$STATE/agents/crush" "$bin" ;;
