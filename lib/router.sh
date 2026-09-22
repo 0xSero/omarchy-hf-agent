@@ -10,7 +10,12 @@ auth_file() { # auth_file <token-file>: (re)write the header file from a token f
   state_dir; printf 'Authorization: Bearer %s\n' "$(cat "$1")" >"$AUTH_FILE"
 }
 router_get() { # router_get <path> <body-file> -> prints the HTTP status; 000 when curl could not connect
-  curl -sS -m "$TIMEOUT" -o "$2" -w '%{http_code}' -H @"$AUTH_FILE" "$ROUTER$1" 2>>"$LOGFILE" || printf 000
+  local code
+  if code=$(curl -sS -m "$TIMEOUT" -o "$2" -w '%{http_code}' -H @"$AUTH_FILE" "$ROUTER$1" 2>>"$LOGFILE"); then
+    printf '%s' "$code"
+  else
+    printf 000
+  fi
 }
 models_cache() { # models_cache <body-file>: keep the ids the router listed, alphabetical, no duplicates
   jq -c '[.data[]?.id // empty] | unique' "$1" >"$MODELS_FILE.tmp.$$" 2>/dev/null && mv "$MODELS_FILE.tmp.$$" "$MODELS_FILE"

@@ -32,7 +32,7 @@ for ((i=1;i<=$#;i++)); do
     https://*) url=$a ;;
   esac
 done
-[[ -n ${SHIM_DOWN:-} ]] && { echo "curl: (6) Could not resolve host" >&2; exit 6; }
+[[ -n ${SHIM_DOWN:-} ]] && { echo "curl: (6) Could not resolve host" >&2; printf 000; exit 6; }
 if [[ $auth != "$GOOD" ]]; then printf '{"error":"Invalid credentials"}' >"$out"; printf 401; exit 0; fi
 case $url in
   */v1/models) list='{"data":[{"id":"Qwen/Qwen3-Coder"},{"id":"deepseek-ai/DeepSeek-V3"},{"id":"Qwen/Qwen3-Coder"}]}'
