@@ -1,3 +1,5 @@
+> **Retired 2026-09-30.** No longer maintained. For local models on Omarchy use [Local AI](https://github.com/0xSero/omarchy-local-ai). This repo is archived and read-only.
+
 <h1 align="center">HF Agent for Omarchy</h1>
 
 <p align="center">
